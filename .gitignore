@@ -1,0 +1,5 @@
+# APIキー・秘匿情報はコードに書かない（PropertiesServiceで管理）
+# 万が一ローカルに残った場合のための除外設定
+*.env
+.env.*
+secrets.js

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; font-size: 13px; margin: 12px; color: #212121; }
+    label { display: block; font-weight: bold; margin-top: 12px; margin-bottom: 4px; }
+    input, select { width: 100%; padding: 6px 8px; box-sizing: border-box; border: 1px solid #bdbdbd; border-radius: 4px; font-size: 13px; }
+    button { width: 100%; margin-top: 14px; padding: 8px; background: #263238; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    button:disabled { background: #90a4ae; cursor: not-allowed; }
+    .card { border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px; margin-top: 10px; }
+    .card-name { font-weight: bold; font-size: 14px; }
+    .card-sub { color: #555; font-size: 12px; margin-top: 2px; }
+    .badge { display: inline-block; background: #eceff1; border-radius: 3px; padding: 1px 6px; font-size: 11px; margin-right: 4px; }
+    .record { color: #1565c0; font-size: 11px; margin-top: 4px; }
+    #results { margin-top: 8px; }
+    .none { color: #888; font-size: 12px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <label>収容規模（人）</label>
+  <input type="number" id="capacity" placeholder="例: 10000" min="1">
+
+  <label>会場種別（任意）</label>
+  <select id="venueType">
+    <option value="">すべて</option>
+  </select>
+
+  <button id="searchBtn" onclick="search()">検索</button>
+
+  <div id="results"></div>
+
+<script>
+  // 会場種別の選択肢をロード
+  google.script.run
+    .withSuccessHandler(function(types) {
+      const sel = document.getElementById('venueType');
+      types.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        sel.appendChild(opt);
+      });
+    })
+    .getVenueTypes();
+
+  function search() {
+    const capacity = document.getElementById('capacity').value;
+    if (!capacity) { alert('収容規模を入力してください'); return; }
+
+    const btn = document.getElementById('searchBtn');
+    btn.disabled = true;
+    btn.textContent = '検索中...';
+    document.getElementById('results').innerHTML = '';
+
+    google.script.run
+      .withSuccessHandler(renderResults)
+      .withFailureHandler(function(e) {
+        btn.disabled = false;
+        btn.textContent = '検索';
+        alert('エラー: ' + e.message);
+      })
+      .searchVenues({
+        capacity:  Number(capacity),
+        venueType: document.getElementById('venueType').value,
+      });
+  }
+
+  function renderResults(venues) {
+    const btn = document.getElementById('searchBtn');
+    btn.disabled = false;
+    btn.textContent = '検索';
+
+    const el = document.getElementById('results');
+    if (venues.length === 0) {
+      el.innerHTML = '<div class="none">該当する会場が見つかりませんでした。<br>収容規模や種別を変えて再検索してください。</div>';
+      return;
+    }
+
+    el.innerHTML = '<div style="font-size:12px;color:#555;margin-top:8px;">' + venues.length + '件見つかりました</div>';
+
+    venues.forEach(v => {
+      const record = v.record ? '<div class="record">取引実績: ' + v.record + '</div>' : '';
+      const notes  = v.notes  ? '<div class="card-sub">' + v.notes + '</div>'          : '';
+      el.innerHTML +=
+        '<div class="card">' +
+          '<div class="card-name">' + v.name + '</div>' +
+          '<div class="card-sub" style="margin-top:4px;">' +
+            '<span class="badge">' + Number(v.capacity).toLocaleString() + '人</span>' +
+            '<span class="badge">' + v.type + '</span>' +
+            '<span class="badge">' + v.location + '</span>' +
+          '</div>' +
+          (v.equipment ? '<div class="card-sub" style="margin-top:4px;">' + v.equipment + '</div>' : '') +
+          notes +
+          record +
+        '</div>';
+    });
+  }
+</script>
+</body>
+</html>
