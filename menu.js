@@ -10,6 +10,7 @@ function onOpen() {
     .addSeparator()
     .addItem('会場候補を検索', 'openVenueSearch')
     .addItem('当日ポジション表を生成', 'openPositionSheetDialog')
+    .addItem('業者進捗を登録', 'openVendorProgressForm')
     .addSeparator()
     .addItem('マイルストーンをカレンダーに登録（全イベント）', 'registerAllPendingMilestones')
     .addSeparator()

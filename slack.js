@@ -63,8 +63,14 @@ function dailySlackReminder() {
     return d >= today && d <= limitDate;
   });
 
-  if (overdue.length === 0 && upcoming.length === 0) {
-    Logger.log('本日のリマインド対象タスクなし');
+  // 業者進捗の期限アラート
+  const vendorAlerts = getVendorProgressAlerts(today, limitDate);
+
+  const hasTaskAlert   = overdue.length > 0 || upcoming.length > 0;
+  const hasVendorAlert = vendorAlerts.overdue.length > 0 || vendorAlerts.upcoming.length > 0;
+
+  if (!hasTaskAlert && !hasVendorAlert) {
+    Logger.log('本日のリマインド対象なし');
     return;
   }
 
@@ -73,8 +79,9 @@ function dailySlackReminder() {
   lines.push(formatDate(today) + ' 時点');
   lines.push('');
 
+  // ── タスク ──
   if (overdue.length > 0) {
-    lines.push('*:warning: 期限切れ (' + overdue.length + '件)*');
+    lines.push('*:warning: タスク 期限切れ (' + overdue.length + '件)*');
     overdue.forEach(t => {
       lines.push(
         '• `' + t['期限'] + '` ' +
@@ -87,7 +94,7 @@ function dailySlackReminder() {
   }
 
   if (upcoming.length > 0) {
-    lines.push('*:clock1: 今後' + REMIND_DAYS_AHEAD + '日以内の期限 (' + upcoming.length + '件)*');
+    lines.push('*:clock1: タスク 今後' + REMIND_DAYS_AHEAD + '日以内 (' + upcoming.length + '件)*');
     upcoming.forEach(t => {
       lines.push(
         '• `' + t['期限'] + '` ' +
@@ -96,10 +103,37 @@ function dailySlackReminder() {
         (t['担当者'] ? '  担当: ' + t['担当者'] : '')
       );
     });
+    lines.push('');
+  }
+
+  // ── 業者進捗 ──
+  if (vendorAlerts.overdue.length > 0) {
+    lines.push('*:rotating_light: 業者依頼期限切れ (' + vendorAlerts.overdue.length + '件)*');
+    vendorAlerts.overdue.forEach(r => {
+      lines.push(
+        '• `' + r['依頼期限'] + '` ' +
+        '[' + r['イベントID'] + '] ' +
+        r['業者名'] + '  ' + r['業務内容'] +
+        '  (' + r['契約状況'] + ')'
+      );
+    });
+    lines.push('');
+  }
+
+  if (vendorAlerts.upcoming.length > 0) {
+    lines.push('*:truck: 業者依頼期限 今後' + REMIND_DAYS_AHEAD + '日以内 (' + vendorAlerts.upcoming.length + '件)*');
+    vendorAlerts.upcoming.forEach(r => {
+      lines.push(
+        '• `' + r['依頼期限'] + '` ' +
+        '[' + r['イベントID'] + '] ' +
+        r['業者名'] + '  ' + r['業務内容'] +
+        '  (' + r['契約状況'] + ')'
+      );
+    });
   }
 
   postToSlack(lines.join('\n'));
-  Logger.log('Slackリマインド送信完了: 期限切れ' + overdue.length + '件 / 直近' + upcoming.length + '件');
+  Logger.log('Slackリマインド送信完了: タスク期限切れ' + overdue.length + '件 / 業者期限切れ' + vendorAlerts.overdue.length + '件');
 }
 
 // 即時テスト用（メニューから呼ぶ）

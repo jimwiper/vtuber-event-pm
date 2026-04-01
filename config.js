@@ -13,7 +13,11 @@ const SHEET = {
   VENDOR_MASTER:    '業者マスタ',
   STAFF_MASTER:     'スタッフ台帳',
   API_LOG:          'API使用ログ',
+  VENDOR_PROGRESS:  '業者進捗管理',
 };
+
+// 業者進捗ステータス
+const VENDOR_PROGRESS_STATUS = ['未依頼', '依頼中', '見積中', '契約済', '完了', 'キャンセル'];
 
 const CLAUDE_MODEL   = 'claude-opus-4-6';
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';

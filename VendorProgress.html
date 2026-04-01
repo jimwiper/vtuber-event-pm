@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 13px;
+      margin: 12px;
+      color: #212121;
+    }
+    label {
+      display: block;
+      font-weight: bold;
+      margin-top: 12px;
+      margin-bottom: 4px;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 6px 8px;
+      box-sizing: border-box;
+      border: 1px solid #bdbdbd;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    textarea { height: 60px; resize: vertical; }
+    .required::after { content: ' *'; color: #e53935; }
+    .hint { font-size: 11px; color: #757575; margin-top: 2px; }
+    #submitBtn {
+      display: block;
+      width: 100%;
+      margin-top: 20px;
+      padding: 10px;
+      background: #263238;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    #submitBtn:disabled { background: #90a4ae; cursor: not-allowed; }
+    #message {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      display: none;
+    }
+    .success { background: #e8f5e9; color: #2e7d32; }
+    .error   { background: #ffebee; color: #c62828; }
+    .row2 { display: flex; gap: 8px; }
+    .row2 > div { flex: 1; }
+  </style>
+</head>
+<body>
+
+  <label class="required">イベント</label>
+  <select id="eventId">
+    <option value="">読み込み中...</option>
+  </select>
+
+  <label class="required">業者名</label>
+  <input type="text" id="vendorName" placeholder="例: 株式会社○○音響">
+  <div class="hint">業者マスタから選択する場合は下のリストから</div>
+
+  <label>業者マスタから選択</label>
+  <select id="vendorSelect" onchange="applyVendorMaster()">
+    <option value="">（マスタから選ぶ場合）</option>
+  </select>
+
+  <label class="required">業務カテゴリ</label>
+  <select id="category">
+    <option value="">選択してください</option>
+    <option value="チケット販売">チケット販売</option>
+    <option value="音響（PA）">音響（PA）</option>
+    <option value="照明">照明</option>
+    <option value="映像">映像</option>
+    <option value="モーションキャプチャ">モーションキャプチャ</option>
+    <option value="警備">警備</option>
+    <option value="仮設・設営">仮設・設営</option>
+    <option value="配信技術">配信技術</option>
+    <option value="グッズ製造">グッズ製造</option>
+    <option value="スタッフ派遣">スタッフ派遣</option>
+    <option value="飲食・フード">飲食・フード</option>
+    <option value="その他">その他</option>
+  </select>
+
+  <label class="required">業務内容</label>
+  <input type="text" id="description" placeholder="例: PA機材一式レンタル・オペレーター派遣">
+
+  <label>契約状況</label>
+  <select id="status">
+    <option value="未依頼">未依頼</option>
+    <option value="依頼中">依頼中</option>
+    <option value="見積中">見積中</option>
+    <option value="契約済">契約済</option>
+    <option value="完了">完了</option>
+    <option value="キャンセル">キャンセル</option>
+  </select>
+
+  <div class="row2">
+    <div>
+      <label>依頼期限</label>
+      <input type="date" id="requestDeadline">
+    </div>
+    <div>
+      <label>納期</label>
+      <input type="date" id="deliveryDate">
+    </div>
+  </div>
+
+  <label>担当窓口</label>
+  <input type="text" id="contact" placeholder="例: 山田様">
+
+  <label>連絡先</label>
+  <input type="text" id="tel" placeholder="例: 03-xxxx-xxxx">
+
+  <label>費用目安（万円）</label>
+  <input type="number" id="cost" placeholder="例: 150" min="0">
+
+  <label>メモ</label>
+  <textarea id="memo" placeholder="例: 前回担当は田中氏。見積りは3社から取ること"></textarea>
+
+  <button id="submitBtn" onclick="submitForm()">登録</button>
+  <div id="message"></div>
+
+<script>
+  var vendorMasterList = [];
+
+  // 初期化
+  google.script.run
+    .withSuccessHandler(function(events) {
+      var sel = document.getElementById('eventId');
+      sel.innerHTML = '<option value="">選択してください</option>';
+      events.forEach(function(e) {
+        sel.innerHTML += '<option value="' + e.id + '">[' + e.id + '] ' + e.name + '</option>';
+      });
+    })
+    .getActiveEvents();
+
+  google.script.run
+    .withSuccessHandler(function(vendors) {
+      vendorMasterList = vendors;
+      var sel = document.getElementById('vendorSelect');
+      vendors.forEach(function(v) {
+        sel.innerHTML += '<option value="' + v.id + '">[' + v.category + '] ' + v.name + '</option>';
+      });
+    })
+    .getVendorMasterList();
+
+  function applyVendorMaster() {
+    var id = document.getElementById('vendorSelect').value;
+    if (!id) return;
+    var v = vendorMasterList.find(function(x) { return x.id === id; });
+    if (!v) return;
+    document.getElementById('vendorName').value = v.name;
+    document.getElementById('contact').value    = v.contact || '';
+    document.getElementById('tel').value        = v.tel     || '';
+  }
+
+  function submitForm() {
+    var eventId     = document.getElementById('eventId').value;
+    var vendorName  = document.getElementById('vendorName').value.trim();
+    var category    = document.getElementById('category').value;
+    var description = document.getElementById('description').value.trim();
+
+    if (!eventId || !vendorName || !category || !description) {
+      showMessage('必須項目（*）をすべて入力してください', false);
+      return;
+    }
+
+    var btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = '登録中...';
+
+    var vendorId = document.getElementById('vendorSelect').value;
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        btn.disabled = false;
+        btn.textContent = '登録';
+        if (result.success) {
+          showMessage('登録しました（' + result.progressId + '）', true);
+          resetForm();
+        } else {
+          showMessage('エラー: ' + result.error, false);
+        }
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        btn.textContent = '登録';
+        showMessage('エラー: ' + err.message, false);
+      })
+      .addVendorProgress({
+        eventId:         eventId,
+        vendorId:        vendorId,
+        vendorName:      vendorName,
+        category:        category,
+        description:     description,
+        status:          document.getElementById('status').value,
+        requestDeadline: document.getElementById('requestDeadline').value,
+        deliveryDate:    document.getElementById('deliveryDate').value,
+        contact:         document.getElementById('contact').value.trim(),
+        tel:             document.getElementById('tel').value.trim(),
+        cost:            document.getElementById('cost').value,
+        memo:            document.getElementById('memo').value.trim(),
+      });
+  }
+
+  function resetForm() {
+    ['vendorName','description','contact','tel','cost','memo',
+     'requestDeadline','deliveryDate'].forEach(function(id) {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('vendorSelect').value = '';
+    document.getElementById('status').value = '未依頼';
+  }
+
+  function showMessage(text, isSuccess) {
+    var el = document.getElementById('message');
+    el.textContent = text;
+    el.className = isSuccess ? 'success' : 'error';
+    el.style.display = 'block';
+  }
+</script>
+</body>
+</html>
