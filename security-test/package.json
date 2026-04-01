@@ -1,0 +1,11 @@
+{
+  "name": "vtuber-event-pm-security-test",
+  "version": "1.0.0",
+  "description": "Security test harness for vtuber-event-pm (GAS project)",
+  "main": "run-security-test.js",
+  "scripts": {
+    "test": "node run-security-test.js",
+    "test:live": "node run-security-test.js --live"
+  },
+  "engines": { "node": ">=18" }
+}
