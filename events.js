@@ -136,6 +136,41 @@ function registerEventFromForm(formData) {
       });
     });
 
+    // PMツールにプロジェクト・タスク・マイルストーンを連携
+    let pmUrl = '';
+    if (PM_CONNECTOR_TYPE) {
+      try {
+        const tasksForPm = (result.tasks || []).map(task => ({
+          taskName:        task.taskName,
+          phase:           task.phase,
+          priority:        task.priority || '中',
+          deadline:        calcDeadline(eventDate, task.daysBeforeEvent),
+          defaultAssignee: task.defaultAssignee || '',
+          memo:            task.memo || '',
+        }));
+
+        const milestonesForPm = (result.milestones || []).map(ms => ({
+          name:    ms.name,
+          date:    calcDeadline(eventDate, ms.daysBeforeEvent),
+          memo:    ms.memo || '',
+        }));
+
+        const pmProject = pmCreateProject({ eventId, name: formData.name });
+        pmCreateTasks(pmProject.projectId, tasksForPm);
+        pmCreateMilestones(pmProject.projectId, milestonesForPm);
+        pmUrl = pmProject.projectUrl;
+
+        // イベント台帳にPM URLを記録
+        updateRowById(SHEET.EVENTS, 'イベントID', eventId, {
+          'PM ProjectID': pmProject.projectId,
+          'PM URL':       pmUrl,
+        });
+      } catch (pmErr) {
+        // PM連携失敗はイベント登録を止めない。ログのみ記録
+        Logger.log('PM連携エラー（イベント登録は完了）: ' + pmErr.message);
+      }
+    }
+
     return {
       success: true,
       eventId: eventId,
@@ -143,6 +178,7 @@ function registerEventFromForm(formData) {
       equipmentCount: (result.equipment || []).length,
       positionCount: (result.staffPositions || []).length,
       milestoneCount: (result.milestones || []).length,
+      pmUrl: pmUrl,
     };
 
   } catch (e) {

@@ -80,3 +80,16 @@ const VENDOR_CATEGORIES = [
 
 // Slackリマインド設定（何日前から通知するか）
 const REMIND_DAYS_AHEAD = 7; // 7日以内に期限が来るタスクを通知
+
+// ==========================================
+// PM Tool 連携設定
+// ==========================================
+
+// 使用するPMツール。null にすると連携をスキップ
+// 対応値: 'github' | null
+// 他ツール追加時: 対応するConnectorファイルを作成し値を追加する
+const PM_CONNECTOR_TYPE = 'github';
+
+// Script Propertiesのキー名
+const PROP_GITHUB_TOKEN = 'GITHUB_TOKEN'; // GitHub Personal Access Token
+const PROP_GITHUB_OWNER = 'GITHUB_OWNER'; // GitHubのユーザー名またはOrg名

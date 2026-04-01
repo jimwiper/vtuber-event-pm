@@ -15,6 +15,7 @@ function onOpen() {
     .addItem('マイルストーンをカレンダーに登録（全イベント）', 'registerAllPendingMilestones')
     .addSeparator()
     .addItem('Slackリマインド（即時テスト）', 'testSlackReminder')
+    .addItem('GitHub Projects 接続テスト', 'testGithubConnection')
     .addItem('セットアップ手順を確認', 'printSetupGuide')
     .addToUi();
 }
