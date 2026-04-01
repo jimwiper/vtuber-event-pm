@@ -57,3 +57,25 @@ function pmCreateMilestones(projectData, milestones) {
   // if (PM_CONNECTOR_TYPE === 'backlog') return backlogCreateMilestones(projectData, milestones);
   throw new Error('未対応のPM Connector: ' + PM_CONNECTOR_TYPE);
 }
+
+/**
+ * Sheets → PMツール: イベントのタスクステータスを同期する
+ * @param {string} eventId
+ * @returns {number} 更新件数
+ */
+function pmSyncSheetsToTool(eventId) {
+  if (PM_CONNECTOR_TYPE === 'github') return githubSyncSheetsToGitHub(eventId);
+  // if (PM_CONNECTOR_TYPE === 'backlog') return backlogSyncSheetsToBacklog(eventId);
+  throw new Error('未対応のPM Connector: ' + PM_CONNECTOR_TYPE);
+}
+
+/**
+ * PMツール → Sheets: イベントのタスクステータスを同期する
+ * @param {string} eventId
+ * @returns {number} 更新件数
+ */
+function pmSyncToolToSheets(eventId) {
+  if (PM_CONNECTOR_TYPE === 'github') return githubSyncGitHubToSheets(eventId);
+  // if (PM_CONNECTOR_TYPE === 'backlog') return backlogSyncBacklogToSheets(eventId);
+  throw new Error('未対応のPM Connector: ' + PM_CONNECTOR_TYPE);
+}

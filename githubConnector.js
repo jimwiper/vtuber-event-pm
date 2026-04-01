@@ -11,8 +11,9 @@
 
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
 
-// 優先度・フェーズのカラー定義
+// 優先度・フェーズ・品質評価のカラー定義
 const PRIORITY_COLORS = { '高': 'RED', '中': 'YELLOW', '低': 'GRAY' };
+const QUALITY_COLORS  = { '良好': 'GREEN', '要改善': 'YELLOW', '問題あり': 'RED' };
 const PHASE_COLORS = {
   'Phase0:企画':    'GRAY',
   'Phase1:準備初期': 'BLUE',
@@ -135,6 +136,25 @@ function createDateField(projectId, name) {
   return data.createProjectV2Field.projectV2Field;
 }
 
+// 数値フィールドを作成
+function createNumberField(projectId, name) {
+  const mutation = `
+    mutation($projectId: ID!, $name: String!) {
+      createProjectV2Field(input: {
+        projectId: $projectId
+        dataType: NUMBER
+        name: $name
+      }) {
+        projectV2Field {
+          ... on ProjectV2Field { id name }
+        }
+      }
+    }
+  `;
+  const data = githubGraphQL(mutation, { projectId, name });
+  return data.createProjectV2Field.projectV2Field;
+}
+
 // フィールドのオプション名 → ID のマップを作成
 function buildOptionMap(field) {
   if (!field || !field.options) return {};
@@ -175,15 +195,39 @@ function setupProjectFields(projectId) {
     );
   }
 
+  // 品質評価フィールド（なければ作成）
+  let qualityField = findField('品質評価');
+  if (!qualityField) {
+    qualityField = createSingleSelectField(
+      projectId, '品質評価', ['良好', '要改善', '問題あり'], QUALITY_COLORS
+    );
+  }
+
+  // 実費フィールド（なければ作成）
+  let actualCostField = findField('実費(万円)');
+  if (!actualCostField) {
+    actualCostField = createNumberField(projectId, '実費(万円)');
+  }
+
+  // 実績納期フィールド（なければ作成）
+  let actualDateField = findField('実績納期');
+  if (!actualDateField) {
+    actualDateField = createDateField(projectId, '実績納期');
+  }
+
   return {
-    projectId:       projectId,
-    statusFieldId:   statusField   ? statusField.id   : null,
-    statusOptions:   buildOptionMap(statusField),
-    priorityFieldId: priorityField ? priorityField.id : null,
-    priorityOptions: buildOptionMap(priorityField),
-    dueDateFieldId:  dueDateField  ? dueDateField.id  : null,
-    phaseFieldId:    phaseField    ? phaseField.id    : null,
-    phaseOptions:    buildOptionMap(phaseField),
+    projectId:        projectId,
+    statusFieldId:    statusField    ? statusField.id    : null,
+    statusOptions:    buildOptionMap(statusField),
+    priorityFieldId:  priorityField  ? priorityField.id  : null,
+    priorityOptions:  buildOptionMap(priorityField),
+    dueDateFieldId:   dueDateField   ? dueDateField.id   : null,
+    phaseFieldId:     phaseField     ? phaseField.id     : null,
+    phaseOptions:     buildOptionMap(phaseField),
+    qualityFieldId:   qualityField   ? qualityField.id   : null,
+    qualityOptions:   buildOptionMap(qualityField),
+    actualCostFieldId: actualCostField ? actualCostField.id : null,
+    actualDateFieldId: actualDateField ? actualDateField.id : null,
   };
 }
 
@@ -268,6 +312,7 @@ function githubCreateProject(eventData) {
 }
 
 // タスクをDraft Issueとして作成 + フィールド値を設定
+// 戻り値: [{sheetTaskId, itemId}] （PM ItemID書き戻し用）
 function githubCreateTasks(projectData, tasks) {
   const { projectId, fieldMap } = projectData;
 
@@ -283,23 +328,29 @@ function githubCreateTasks(projectData, tasks) {
     }
   `;
 
+  const mappings = [];
   tasks.forEach(task => {
+    const title = task.parentTaskName ? '└─ ' + task.taskName : task.taskName;
     const body = [
+      task.parentTaskName ? '**親タスク**: ' + task.parentTaskName : '',
       '**担当**: ' + (task.defaultAssignee || '未定'),
       task.memo ? '**メモ**: ' + task.memo : '',
     ].filter(Boolean).join('\n');
 
     const data = githubGraphQL(mutation, {
       projectId: projectId,
-      title:     task.taskName,
+      title:     title,
       body:      body,
     });
 
     const itemId = data.addProjectV2DraftIssue.projectItem.id;
     applyTaskFields(projectId, itemId, task, fieldMap);
+
+    if (task.sheetTaskId) mappings.push({ sheetTaskId: task.sheetTaskId, itemId: itemId });
   });
 
   Logger.log('GitHub タスク登録完了: ' + tasks.length + '件');
+  return mappings;
 }
 
 // マイルストーンを【MS】プレフィックス付きDraft Issueとして作成
@@ -336,6 +387,156 @@ function githubCreateMilestones(projectData, milestones) {
   });
 
   Logger.log('GitHub マイルストーン登録完了: ' + milestones.length + '件');
+}
+
+// ==========================================
+// 双方向同期
+// ==========================================
+
+// Sheets（ステータス列）→ GitHub Projects（Statusフィールド）
+function githubSyncSheetsToGitHub(eventId) {
+  const events = filterRows(SHEET.EVENTS, { 'イベントID': eventId });
+  if (!events.length || !events[0]['PM ProjectID']) {
+    throw new Error('GitHub ProjectIDが見つかりません: ' + eventId);
+  }
+
+  const projectId = events[0]['PM ProjectID'];
+  const fieldMap  = setupProjectFields(projectId);
+  const tasks     = filterRows(SHEET.TASKS, { 'イベントID': eventId });
+
+  const STATUS_TO_GH = {
+    '未着手':    'Todo',
+    '進行中':    'In Progress',
+    '完了':      'Done',
+    '要確認':    'In Review',
+    'ブロック中': 'Blocked',
+  };
+
+  let count = 0;
+  tasks.forEach(function(task) {
+    const itemId = task['PM ItemID'];
+    if (!itemId) return;
+
+    // ステータス
+    const ghLabel = STATUS_TO_GH[task['ステータス']];
+    if (ghLabel) {
+      const optId = fieldMap.statusOptions[ghLabel];
+      if (optId && fieldMap.statusFieldId) {
+        setFieldValue(projectId, itemId, fieldMap.statusFieldId, { singleSelectOptionId: optId });
+      }
+    }
+
+    // 品質評価
+    if (task['品質評価'] && fieldMap.qualityFieldId) {
+      const optId = fieldMap.qualityOptions[task['品質評価']];
+      if (optId) setFieldValue(projectId, itemId, fieldMap.qualityFieldId, { singleSelectOptionId: optId });
+    }
+
+    // 実費(万円)
+    const cost = Number(task['実費(万円)']);
+    if (!isNaN(cost) && task['実費(万円)'] !== '' && fieldMap.actualCostFieldId) {
+      setFieldValue(projectId, itemId, fieldMap.actualCostFieldId, { number: cost });
+    }
+
+    // 実績納期
+    if (task['実績納期'] && fieldMap.actualDateFieldId) {
+      const isoDate = toISODate(task['実績納期']);
+      if (isoDate) setFieldValue(projectId, itemId, fieldMap.actualDateFieldId, { date: isoDate });
+    }
+
+    count++;
+  });
+
+  Logger.log('Sheets→GitHub同期完了: ' + count + '件');
+  return count;
+}
+
+// GitHub Projects（Statusフィールド）→ Sheets（ステータス列）
+function githubSyncGitHubToSheets(eventId) {
+  const events = filterRows(SHEET.EVENTS, { 'イベントID': eventId });
+  if (!events.length || !events[0]['PM ProjectID']) {
+    throw new Error('GitHub ProjectIDが見つかりません: ' + eventId);
+  }
+
+  const projectId = events[0]['PM ProjectID'];
+
+  const query = `
+    query($projectId: ID!) {
+      node(id: $projectId) {
+        ... on ProjectV2 {
+          items(first: 100) {
+            nodes {
+              id
+              fieldValues(first: 20) {
+                nodes {
+                  ... on ProjectV2ItemFieldSingleSelectValue {
+                    name
+                    field { ... on ProjectV2SingleSelectField { name } }
+                  }
+                  ... on ProjectV2ItemFieldNumberValue {
+                    number
+                    field { ... on ProjectV2Field { name } }
+                  }
+                  ... on ProjectV2ItemFieldDateValue {
+                    date
+                    field { ... on ProjectV2Field { name } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const data  = githubGraphQL(query, { projectId: projectId });
+  const items = data.node.items.nodes;
+
+  const STATUS_TO_SHEETS = {
+    'Todo':        '未着手',
+    'In Progress': '進行中',
+    'Done':        '完了',
+    'In Review':   '要確認',
+    'Blocked':     'ブロック中',
+  };
+
+  let count = 0;
+  items.forEach(function(item) {
+    const fvNodes = item.fieldValues.nodes;
+    const findFv  = function(fieldName) {
+      return fvNodes.find(function(fv) { return fv.field && fv.field.name === fieldName; });
+    };
+
+    const updateObj = {};
+
+    // ステータス
+    const statusFv = findFv('Status');
+    if (statusFv && STATUS_TO_SHEETS[statusFv.name]) {
+      updateObj['ステータス'] = STATUS_TO_SHEETS[statusFv.name];
+    }
+
+    // 品質評価
+    const qualityFv = findFv('品質評価');
+    if (qualityFv && qualityFv.name) updateObj['品質評価'] = qualityFv.name;
+
+    // 実費(万円)
+    const costFv = findFv('実費(万円)');
+    if (costFv && costFv.number != null) updateObj['実費(万円)'] = costFv.number;
+
+    // 実績納期
+    const actualDateFv = findFv('実績納期');
+    if (actualDateFv && actualDateFv.date) {
+      updateObj['実績納期'] = actualDateFv.date.replace(/-/g, '/');
+    }
+
+    if (Object.keys(updateObj).length > 0) {
+      if (updateRowById(SHEET.TASKS, 'PM ItemID', item.id, updateObj)) count++;
+    }
+  });
+
+  Logger.log('GitHub→Sheets同期完了: ' + count + '件');
+  return count;
 }
 
 // ==========================================

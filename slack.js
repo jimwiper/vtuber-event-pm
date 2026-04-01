@@ -35,15 +35,17 @@ function dailySlackReminder() {
   const limitDate = new Date(today);
   limitDate.setDate(limitDate.getDate() + REMIND_DAYS_AHEAD);
 
-  // 完了・中止以外のイベントのタスクを全取得
-  const activeEventIds = getAllRows(SHEET.EVENTS)
-    .filter(e => e['ステータス'] !== '完了' && e['ステータス'] !== '中止')
-    .map(e => e['イベントID']);
+  // 完了・中止以外のイベントを取得
+  const activeEvents = getAllRows(SHEET.EVENTS)
+    .filter(e => e['ステータス'] !== '完了' && e['ステータス'] !== '中止');
+  const activeEventIds = activeEvents.map(e => e['イベントID']);
+  const eventNameMap   = {};
+  activeEvents.forEach(e => { eventNameMap[e['イベントID']] = e['イベント名']; });
 
   if (activeEventIds.length === 0) return;
 
   const allTasks = getAllRows(SHEET.TASKS).filter(t =>
-    activeEventIds.includes(t['イベントID']) &&
+    activeEventIds.indexOf(t['イベントID']) !== -1 &&
     t['ステータス'] !== '完了'
   );
 
@@ -63,13 +65,34 @@ function dailySlackReminder() {
     return d >= today && d <= limitDate;
   });
 
+  // 担当者未定 かつ 期限が近い・過ぎているタスク
+  const unassigned = allTasks.filter(t => {
+    if (t['担当者']) return false;
+    if (!t['期限']) return false;
+    const d = new Date(t['期限']);
+    d.setHours(0, 0, 0, 0);
+    return d <= limitDate;
+  });
+
+  // 遅延件数がしきい値以上のイベント（要リソース確認）
+  const overdueByEvent = {};
+  overdue.forEach(t => {
+    const id = t['イベントID'];
+    overdueByEvent[id] = (overdueByEvent[id] || 0) + 1;
+  });
+  const resourceAlerts = Object.keys(overdueByEvent).filter(
+    id => overdueByEvent[id] >= DELAY_ALERT_THRESHOLD
+  );
+
   // 業者進捗の期限アラート
   const vendorAlerts = getVendorProgressAlerts(today, limitDate);
 
-  const hasTaskAlert   = overdue.length > 0 || upcoming.length > 0;
-  const hasVendorAlert = vendorAlerts.overdue.length > 0 || vendorAlerts.upcoming.length > 0;
+  const hasTaskAlert     = overdue.length > 0 || upcoming.length > 0;
+  const hasUnassigned    = unassigned.length > 0;
+  const hasResourceAlert = resourceAlerts.length > 0;
+  const hasVendorAlert   = vendorAlerts.overdue.length > 0 || vendorAlerts.upcoming.length > 0;
 
-  if (!hasTaskAlert && !hasVendorAlert) {
+  if (!hasTaskAlert && !hasUnassigned && !hasResourceAlert && !hasVendorAlert) {
     Logger.log('本日のリマインド対象なし');
     return;
   }
@@ -106,6 +129,32 @@ function dailySlackReminder() {
     lines.push('');
   }
 
+  // ── 担当者未定 ──
+  if (unassigned.length > 0) {
+    lines.push('*:bust_in_silhouette: 担当者未定 (' + unassigned.length + '件)*');
+    unassigned.forEach(t => {
+      lines.push(
+        '• `' + t['期限'] + '` ' +
+        '[' + t['イベントID'] + '] ' +
+        t['タスク名']
+      );
+    });
+    lines.push('');
+  }
+
+  // ── 要リソース確認イベント ──
+  if (resourceAlerts.length > 0) {
+    lines.push('*:sos: 要リソース確認 — 遅延' + DELAY_ALERT_THRESHOLD + '件以上のイベント*');
+    resourceAlerts.forEach(id => {
+      lines.push(
+        '• [' + id + '] ' +
+        (eventNameMap[id] || '') +
+        '  遅延タスク: *' + overdueByEvent[id] + '件*'
+      );
+    });
+    lines.push('');
+  }
+
   // ── 業者進捗 ──
   if (vendorAlerts.overdue.length > 0) {
     lines.push('*:rotating_light: 業者依頼期限切れ (' + vendorAlerts.overdue.length + '件)*');
@@ -133,7 +182,12 @@ function dailySlackReminder() {
   }
 
   postToSlack(lines.join('\n'));
-  Logger.log('Slackリマインド送信完了: タスク期限切れ' + overdue.length + '件 / 業者期限切れ' + vendorAlerts.overdue.length + '件');
+  Logger.log(
+    'Slackリマインド送信完了: タスク期限切れ' + overdue.length + '件' +
+    ' / 担当者未定' + unassigned.length + '件' +
+    ' / 要リソース確認' + resourceAlerts.length + '件' +
+    ' / 業者期限切れ' + vendorAlerts.overdue.length + '件'
+  );
 }
 
 // 即時テスト用（メニューから呼ぶ）

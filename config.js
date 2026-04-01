@@ -79,7 +79,8 @@ const VENDOR_CATEGORIES = [
 ];
 
 // Slackリマインド設定（何日前から通知するか）
-const REMIND_DAYS_AHEAD = 7; // 7日以内に期限が来るタスクを通知
+const REMIND_DAYS_AHEAD      = 7; // 7日以内に期限が来るタスクを通知
+const DELAY_ALERT_THRESHOLD  = 3; // 遅延タスクがこの件数以上のイベントを要リソース確認とする
 
 // ==========================================
 // PM Tool 連携設定

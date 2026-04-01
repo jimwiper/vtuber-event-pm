@@ -16,6 +16,9 @@ function onOpen() {
     .addSeparator()
     .addItem('Slackリマインド（即時テスト）', 'testSlackReminder')
     .addItem('GitHub Projects 接続テスト', 'testGithubConnection')
+    .addSeparator()
+    .addItem('Sheets → GitHub 同期（全イベント）', 'syncAllSheetsToGitHub')
+    .addItem('GitHub → Sheets 同期（全イベント）', 'syncAllGitHubToSheets')
     .addItem('セットアップ手順を確認', 'printSetupGuide')
     .addToUi();
 }

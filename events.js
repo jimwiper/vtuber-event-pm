@@ -75,12 +75,26 @@ function registerEventFromForm(formData) {
     const prompt = buildEventExpansionPrompt(formData);
     const result = validateClaudeOutput(callClaudeJson(prompt, 'registerEventFromForm'));
 
-    // タスクをシートに書き込む
+    // タスクIDを一括採番（parentIndex解決のため書き込み前に全ID確定）
     const eventDate = new Date(formData.startDate);
-    (result.tasks || []).forEach(task => {
-      const deadline = calcDeadline(eventDate, task.daysBeforeEvent);
+    const tasks = result.tasks || [];
+    const existingTaskNums = getAllRows(SHEET.TASKS)
+      .map(r => parseInt((r['タスクID'] || '').replace('TSK', ''), 10))
+      .filter(n => !isNaN(n));
+    const startTaskNum = existingTaskNums.length > 0 ? Math.max.apply(null, existingTaskNums) + 1 : 1;
+    const taskIds = tasks.map(function(_, i) {
+      return 'TSK' + String(startTaskNum + i).padStart(3, '0');
+    });
+
+    // タスクをシートに書き込む（PM同期用にsheetTasksへも収集）
+    const sheetTasks = [];
+    tasks.forEach(function(task, i) {
+      const taskId      = taskIds[i];
+      const parentTaskId = (task.parentIndex != null && taskIds[task.parentIndex])
+        ? taskIds[task.parentIndex] : '';
+      const deadline    = calcDeadline(eventDate, task.daysBeforeEvent);
       appendRow(SHEET.TASKS, {
-        'タスクID':   generateId('TSK', SHEET.TASKS, 'タスクID'),
+        'タスクID':   taskId,
         'イベントID': eventId,
         'フェーズ':   task.phase,
         'タスク名':   task.taskName,
@@ -89,6 +103,23 @@ function registerEventFromForm(formData) {
         'ステータス': '未着手',
         '優先度':     task.priority || '中',
         'メモ':       task.memo || '',
+        'PM ItemID':  '',
+        '品質評価':   '',
+        '実費(万円)': '',
+        '実績納期':   '',
+        '親タスクID': parentTaskId,
+      });
+      sheetTasks.push({
+        sheetTaskId:     taskId,
+        taskName:        task.taskName,
+        phase:           task.phase,
+        priority:        task.priority || '中',
+        deadline:        deadline,
+        defaultAssignee: task.defaultAssignee || '',
+        memo:            task.memo || '',
+        parentTaskName:  parentTaskId
+          ? (tasks[task.parentIndex] || {}).taskName || ''
+          : '',
       });
     });
 
@@ -140,25 +171,21 @@ function registerEventFromForm(formData) {
     let pmUrl = '';
     if (PM_CONNECTOR_TYPE) {
       try {
-        const tasksForPm = (result.tasks || []).map(task => ({
-          taskName:        task.taskName,
-          phase:           task.phase,
-          priority:        task.priority || '中',
-          deadline:        calcDeadline(eventDate, task.daysBeforeEvent),
-          defaultAssignee: task.defaultAssignee || '',
-          memo:            task.memo || '',
-        }));
-
         const milestonesForPm = (result.milestones || []).map(ms => ({
-          name:    ms.name,
-          date:    calcDeadline(eventDate, ms.daysBeforeEvent),
-          memo:    ms.memo || '',
+          name: ms.name,
+          date: calcDeadline(eventDate, ms.daysBeforeEvent),
+          memo: ms.memo || '',
         }));
 
-        const pmProject = pmCreateProject({ eventId, name: formData.name });
-        pmCreateTasks(pmProject, tasksForPm);
+        const pmProject     = pmCreateProject({ eventId, name: formData.name });
+        const itemMappings  = pmCreateTasks(pmProject, sheetTasks);
         pmCreateMilestones(pmProject, milestonesForPm);
         pmUrl = pmProject.projectUrl;
+
+        // タスクシートにPM ItemIDを書き戻す
+        (itemMappings || []).forEach(function(m) {
+          updateRowById(SHEET.TASKS, 'タスクID', m.sheetTaskId, { 'PM ItemID': m.itemId });
+        });
 
         // イベント台帳にPM URLを記録
         updateRowById(SHEET.EVENTS, 'イベントID', eventId, {
@@ -234,6 +261,7 @@ function buildEventExpansionPrompt(formData) {
 - タスクは各フェーズから漏れなく、かつ重複なく出力する
 - 機材はこのイベント種別・規模で実際に必要なものだけ出力する
 - スタッフポジションは当日必要な役割を全て出力する（1ポジション1行、同じ役割を複数人必要な場合は count で表現）
+- parentIndex は tasks 配列内の親タスクのインデックス（0始まり）。ルートタスクは null。子タスクは必ず親より後ろに配置すること
 
 【出力形式】
 {
@@ -244,7 +272,8 @@ function buildEventExpansionPrompt(formData) {
       "priority": "高/中/低",
       "daysBeforeEvent": 180,
       "defaultAssignee": "担当部門・役割名",
-      "memo": "補足があれば"
+      "memo": "補足があれば",
+      "parentIndex": null
     }
   ],
   "equipment": [
@@ -273,4 +302,34 @@ function buildEventExpansionPrompt(formData) {
     }
   ]
 }`;
+}
+
+// ==========================================
+// PM同期ラッパー（メニューから呼ばれる）
+// ==========================================
+
+function syncAllSheetsToGitHub() {
+  var events = getAllRows(SHEET.EVENTS).filter(function(e) { return e['PM ProjectID']; });
+  var total = 0;
+  events.forEach(function(e) {
+    try {
+      total += pmSyncSheetsToTool(e['イベントID']);
+    } catch (err) {
+      Logger.log('同期エラー(' + e['イベントID'] + '): ' + err.message);
+    }
+  });
+  SpreadsheetApp.getUi().alert('Sheets → GitHub 同期完了: ' + total + '件更新');
+}
+
+function syncAllGitHubToSheets() {
+  var events = getAllRows(SHEET.EVENTS).filter(function(e) { return e['PM ProjectID']; });
+  var total = 0;
+  events.forEach(function(e) {
+    try {
+      total += pmSyncToolToSheets(e['イベントID']);
+    } catch (err) {
+      Logger.log('同期エラー(' + e['イベントID'] + '): ' + err.message);
+    }
+  });
+  SpreadsheetApp.getUi().alert('GitHub → Sheets 同期完了: ' + total + '件更新');
 }
