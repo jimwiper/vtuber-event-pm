@@ -156,8 +156,8 @@ function registerEventFromForm(formData) {
         }));
 
         const pmProject = pmCreateProject({ eventId, name: formData.name });
-        pmCreateTasks(pmProject.projectId, tasksForPm);
-        pmCreateMilestones(pmProject.projectId, milestonesForPm);
+        pmCreateTasks(pmProject, tasksForPm);
+        pmCreateMilestones(pmProject, milestonesForPm);
         pmUrl = pmProject.projectUrl;
 
         // イベント台帳にPM URLを記録
