@@ -12,6 +12,7 @@ const SHEET = {
   EQUIPMENT_MASTER: '機材マスタ',
   VENDOR_MASTER:    '業者マスタ',
   STAFF_MASTER:     'スタッフ台帳',
+  API_LOG:          'API使用ログ',
 };
 
 const CLAUDE_MODEL   = 'claude-opus-4-6';

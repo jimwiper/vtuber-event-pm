@@ -73,7 +73,7 @@ function registerEventFromForm(formData) {
 
     // Claude APIでタスク・機材・ポジションを生成（レスポンスをスキーマ検証してから使用）
     const prompt = buildEventExpansionPrompt(formData);
-    const result = validateClaudeOutput(callClaudeJson(prompt));
+    const result = validateClaudeOutput(callClaudeJson(prompt, 'registerEventFromForm'));
 
     // タスクをシートに書き込む
     const eventDate = new Date(formData.startDate);
