@@ -129,11 +129,19 @@ function filterRows(sheetName, conditions) {
   });
 }
 
+// 数式インジェクション対策: =, +, -, @ 等で始まる文字列を ' でエスケープして
+// Google Sheets が数式として解釈しないようにする
+function sanitizeForSheet(value) {
+  if (typeof value !== 'string') return value;
+  if (/^[=+\-@\t\r]/.test(value)) return "'" + value;
+  return value;
+}
+
 // 1行追記（ヘッダー順にオブジェクトを配列変換して追加）
 function appendRow(sheetName, rowObj) {
   const sheet = getSheet(sheetName);
   const headers = HEADERS[sheetName];
-  const values = headers.map(h => rowObj[h] !== undefined ? rowObj[h] : '');
+  const values = headers.map(h => sanitizeForSheet(rowObj[h] !== undefined ? rowObj[h] : ''));
   sheet.appendRow(values);
 }
 
