@@ -1,0 +1,6 @@
+security-test/**
+.git/**
+.gitignore
+LICENSE
+README.md
+SECURITY_GUIDELINE.md
